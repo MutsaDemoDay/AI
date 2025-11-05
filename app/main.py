@@ -62,41 +62,6 @@ async def health_check():
 
 @app.post("/api/v1/recommendations", response_model=RecommendationResponse)
 async def get_recommendations(request: RecommendationRequest):
-    """
-    카테고리별 가게 추천 API
-    
-    4개 카테고리별로 최대 2개씩 추천:
-    1. 이벤트 참여 가게 (경험치 2배 등)
-    2. 신규 가입 가게
-    3. 인기 가게 (방문 횟수 많은 가게)
-    4. 가까운 가게
-    
-    Args:
-        request: 추천 요청 데이터
-    
-    Returns:
-        카테고리별 추천 가게 목록
-    
-    Example:
-        POST /api/v1/recommendations
-        {
-            "user_id": "user123",
-            "location": {
-                "latitude": 37.5665,
-                "longitude": 126.9780
-            },
-            "event_stores": [
-                {"store_id": "store001", "exp_multiplier": 2.0},
-                {"store_id": "store002", "exp_multiplier": 3.0}
-            ],
-            "new_stores": [
-                {"store_id": "store003", "joined_date": "2025-11-01T00:00:00"}
-            ],
-            "popular_stores": [
-                {"store_id": "store005", "visit_count": 150}
-            ]
-        }
-    """
     try:
         logger.info(f"카테고리별 추천 요청 수신: user_id={request.user_id}, "
                    f"location=({request.location.latitude}, {request.location.longitude})")

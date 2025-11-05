@@ -17,7 +17,7 @@ class RecommendationService:
         """초기화 - lazy loading (첫 요청 시 데이터 로드)"""
         self.stores_df = None
         self._is_loading = False
-        print("✅ RecommendationService 초기화 완료")
+        print("RecommendationService 초기화 완료")
     
     def _ensure_data_loaded(self):
         """데이터가 로드되었는지 확인하고, 안되어 있으면 로드"""
@@ -25,9 +25,9 @@ class RecommendationService:
             self._is_loading = True
             try:
                 self.stores_df = self._load_stores_from_excel()
-                print(f"✅ 가게 데이터 로드 완료: {len(self.stores_df)}개 가게")
+                print(f"가게 데이터 로드 완료: {len(self.stores_df)}개 가게")
             except Exception as e:
-                print(f"❌ 데이터 로드 실패: {e}")
+                print(f"데이터 로드 실패: {e}")
                 # 최소한의 Mock 데이터
                 self.stores_df = pd.DataFrame([{
                     "store_id": "store0001",
@@ -80,7 +80,7 @@ class RecommendationService:
             return df
             
         except Exception as e:
-            print(f"❌ xlsx 파일 로드 실패: {str(e)}")
+            print(f"xlsx 파일 로드 실패: {str(e)}")
             print("Mock 데이터를 사용합니다.")
             # Mock 데이터 반환
             return pd.DataFrame([
@@ -147,7 +147,7 @@ class RecommendationService:
             # xlsx에서 가게 조회
             store = self._get_store_by_id(xlsx_store_id)
             if not store:
-                print(f"⚠️ 가게를 찾을 수 없음: Spring ID={event_store.store_id}, xlsx ID={xlsx_store_id}")
+                print(f"가게를 찾을 수 없음: Spring ID={event_store.store_id}, xlsx ID={xlsx_store_id}")
                 continue
             
             distance = self._calculate_distance(user_lat, user_lon, store)
@@ -188,7 +188,7 @@ class RecommendationService:
             # xlsx에서 가게 조회
             store = self._get_store_by_id(xlsx_store_id)
             if not store:
-                print(f"⚠️ 가게를 찾을 수 없음: Spring ID={new_store.store_id}, xlsx ID={xlsx_store_id}")
+                print(f"가게를 찾을 수 없음: Spring ID={new_store.store_id}, xlsx ID={xlsx_store_id}")
                 continue
             
             distance = self._calculate_distance(user_lat, user_lon, store)
