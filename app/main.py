@@ -67,7 +67,8 @@ async def get_recommendations(request: RecommendationRequest):
                    f"location=({request.location.latitude}, {request.location.longitude})")
         logger.info(f"이벤트 가게: {len(request.event_stores)}개, "
                    f"신규 가게: {len(request.new_stores)}개, "
-                   f"인기 가게: {len(request.popular_stores)}개")
+                   f"인기 가게: {len(request.popular_stores)}개, "
+                   f"방문 데이터: {len(request.visit_statics)}개")
         
         # 추천 서비스 호출
         response = recommendation_service.recommend_stores(request)

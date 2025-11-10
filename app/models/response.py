@@ -45,16 +45,21 @@ class StoreInfo(BaseModel):
     recommendation_reason: List[str] = Field(default_factory=list, description="추천 이유")
 
 
+class SimpleStoreInfo(BaseModel):
+    """간단한 가게 정보 (Spring Boot 연동용)"""
+    name: str = Field(..., description="가게 이름")
+    address: str = Field(..., description="주소")
+
+
 class CategoryRecommendation(BaseModel):
     """카테고리별 추천"""
     category: str = Field(..., description="카테고리 이름")
-    stores: List[StoreInfo] = Field(default_factory=list, description="추천 가게 목록 (최대 2개)")
+    stores: List[SimpleStoreInfo] = Field(default_factory=list, description="추천 가게 목록 (최대 2개)")
 
 
 class RecommendationResponse(BaseModel):
     """가게 추천 응답 모델"""
     success: bool = Field(..., description="요청 성공 여부")
-    message: Optional[str] = Field(default=None, description="메시지")
     user_id: str = Field(..., description="사용자 ID")
     recommendations: List[CategoryRecommendation] = Field(default_factory=list, description="카테고리별 추천")
     
@@ -62,7 +67,6 @@ class RecommendationResponse(BaseModel):
         schema_extra = {
             "example": {
                 "success": True,
-                "message": "추천 가게 목록을 성공적으로 가져왔습니다.",
                 "user_id": "user123",
                 "recommendations": [
                     {

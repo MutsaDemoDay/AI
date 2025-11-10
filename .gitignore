@@ -68,3 +68,6 @@ dmypy.json
 
 README.md
 .README.md
+
+app/config.py
+.app/config.py
