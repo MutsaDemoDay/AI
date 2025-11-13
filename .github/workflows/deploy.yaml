@@ -1,4 +1,4 @@
-name: Deploy AI Service
+name: Deploy AI
 
 on:
   push:
