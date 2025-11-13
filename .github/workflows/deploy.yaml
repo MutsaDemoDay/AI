@@ -1,5 +1,4 @@
 name: Deploy AI Service
-
 on:
   push:
     branches: ["main"]
