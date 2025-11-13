@@ -2,7 +2,7 @@ name: Deploy AI
 
 on:
   push:
-    branches: ["feat/deploy"]
+    branches: ["main"]
 
 jobs:
   deploy:
