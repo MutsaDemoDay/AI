@@ -1,0 +1,30 @@
+name: Deploy AI Service
+
+on:
+  push:
+    branches: ["feat/deploy"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Naver Cloud Registry
+      run: |
+        echo "${{ secrets.NCP_SECRET_KEY }}" | docker login \
+        -u ${{ secrets.NCP_ACCESS_KEY }} \
+        --password-stdin ${{ secrets.NCP_REGISTRY }}
+
+    - name: Build Docker Image
+      run: |
+        docker build -t ${{ secrets.NCP_REGISTRY }}/${{ secrets.NCP_REPO_NAME }}:latest .
+
+    - name: Push Docker Image
+      run: |
+        docker push ${{ secrets.NCP_REGISTRY }}/${{ secrets.NCP_REPO_NAME }}:latest
