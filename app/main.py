@@ -63,14 +63,10 @@ async def health_check():
 @app.post("/api/v1/recommendations", response_model=RecommendationResponse)
 async def get_recommendations(request: RecommendationRequest):
     try:
-        logger.info(f"카테고리별 추천 요청 수신: user_id={request.user_id}, "
+        logger.info(f"추천 요청 수신: user_id={request.user_id}, "
                    f"location=({request.location.latitude}, {request.location.longitude})")
-        logger.info(f"이벤트 가게: {len(request.event_stores)}개, "
-                   f"신규 가게: {len(request.new_stores)}개, "
-                   f"인기 가게: {len(request.popular_stores)}개, "
-                   f"방문 데이터: {len(request.visit_statics)}개")
         
-        # 추천 서비스 호출
+        # 추천 서비스 호출 (DB에서 필요한 데이터를 자동으로 조회)
         response = recommendation_service.recommend_stores(request)
         
         total_stores = sum(len(cat.stores) for cat in response.recommendations)

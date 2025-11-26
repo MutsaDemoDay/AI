@@ -90,15 +90,11 @@ class VisitData(BaseModel):
 
 class RecommendationRequest(BaseModel):
     """
-    가게 추천 요청 모델
-    Spring Boot AiRequest와 동일한 구조
+    가게 추천 요청 모델 (간소화 버전)
+    user_id와 location만 받고, 나머지는 DB에서 직접 조회
     """
     user_id: Union[str, int] = Field(..., description="사용자 ID")
     location: UserLocation = Field(..., description="사용자 위치")
-    event_stores: List[EventStore] = Field(default_factory=list, description="이벤트 참여 가게 목록")
-    new_stores: List[NewStore] = Field(default_factory=list, description="신규 가입 가게 목록")
-    popular_stores: List[PopularStore] = Field(default_factory=list, description="인기 가게 목록")
-    visit_statics: List[VisitData] = Field(default_factory=list, description="방문 통계 데이터 (협업 필터링용)")
     
     @field_validator('user_id')
     @classmethod
@@ -106,36 +102,14 @@ class RecommendationRequest(BaseModel):
         """user_id를 문자열로 변환"""
         return str(v)
     
-    @property
-    def visit_data(self) -> List[VisitData]:
-        """visit_statics를 visit_data로 접근할 수 있도록 별칭 제공"""
-        return self.visit_statics
-    
     class Config:
         json_schema_extra = {
             "example": {
                 "user_id": 2,
                 "location": {
-                    "latitude": 37.111,
-                    "longitude": 126.111
-                },
-                "event_stores": [
-                    {"store_id": 1, "exp_multiplier": 2.0},
-                    {"store_id": 2, "exp_multiplier": 1.0}
-                ],
-                "new_stores": [
-                    {"store_id": 15, "joined_date": "2025-11-05"},
-                    {"store_id": 12, "joined_date": "2025-11-05"}
-                ],
-                "popular_stores": [
-                    {"store_id": 3, "visit_count": 4},
-                    {"store_id": 2, "visit_count": 3}
-                ],
-                "visit_statics": [
-                    {"user_id": 2, "store_id": 14, "visit_count": 1},
-                    {"user_id": 2, "store_id": 3, "visit_count": 1},
-                    {"user_id": 2, "store_id": 8, "visit_count": 1}
-                ]
+                    "latitude": 37.556,
+                    "longitude": 126.925
+                }
             }
         }
 

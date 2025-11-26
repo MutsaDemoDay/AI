@@ -25,6 +25,229 @@ class RecommendationService:
         self.db_engine = None  # SQLAlchemy 엔진
         print("RecommendationService 초기화 완료")
     
+    def _fetch_event_stores_from_db(self) -> List[Dict]:
+        """
+        DB에서 이벤트 참여 가게 조회
+        Returns:
+            [{"store_address": "주소", "exp_multiplier": 2.0}, ...]
+        """
+        engine = self._get_db_engine()
+        if engine is None:
+            print("DB 연결 실패로 이벤트 가게를 조회할 수 없습니다.")
+            return []
+        
+        try:
+            # exp_multiplier가 1보다 큰 가게들 조회 (이벤트 참여 중)
+            # stores 테이블에 exp_multiplier 컬럼이 있다고 가정
+            query = """
+                SELECT 
+                    address as store_address,
+                    COALESCE(exp_multiplier, 1.0) as exp_multiplier
+                FROM stores
+                WHERE exp_multiplier > 1.0
+                  AND address IS NOT NULL 
+                  AND address != ''
+                ORDER BY exp_multiplier DESC
+                LIMIT 20
+            """
+            
+            df = pd.read_sql(query, engine)
+            
+            if df.empty:
+                print("이벤트 참여 가게가 없습니다.")
+                return []
+            
+            result = df.to_dict('records')
+            print(f"DB에서 이벤트 가게 {len(result)}개 조회 완료")
+            return result
+            
+        except Exception as e:
+            print(f"이벤트 가게 조회 실패: {e}")
+            return []
+    
+    def _fetch_new_stores_from_db(self) -> List[Dict]:
+        """
+        DB에서 신규 가입 가게 조회 (최근 30일 이내)
+        Returns:
+            [{"store_address": "주소", "joined_date": datetime}, ...]
+        """
+        engine = self._get_db_engine()
+        if engine is None:
+            print("DB 연결 실패로 신규 가게를 조회할 수 없습니다.")
+            return []
+        
+        try:
+            # 최근 30일 이내 가입한 가게들 조회
+            query = """
+                SELECT 
+                    address as store_address,
+                    joined_date
+                FROM stores
+                WHERE joined_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                  AND address IS NOT NULL 
+                  AND address != ''
+                ORDER BY joined_date DESC
+                LIMIT 20
+            """
+            
+            df = pd.read_sql(query, engine)
+            
+            if df.empty:
+                print("신규 가입 가게가 없습니다.")
+                return []
+            
+            result = df.to_dict('records')
+            print(f"DB에서 신규 가게 {len(result)}개 조회 완료")
+            return result
+            
+        except Exception as e:
+            print(f"신규 가게 조회 실패: {e}")
+            return []
+    
+    def _fetch_popular_stores_from_db(self) -> List[Dict]:
+        """
+        DB에서 인기 가게 조회 (방문 횟수 많은 순)
+        Returns:
+            [{"store_address": "주소", "visit_count": 10}, ...]
+        """
+        engine = self._get_db_engine()
+        if engine is None:
+            print("DB 연결 실패로 인기 가게를 조회할 수 없습니다.")
+            return []
+        
+        try:
+            # 전체 사용자의 방문 횟수를 집계하여 인기 가게 찾기
+            queries = [
+                # Case 1: stores.store_id
+                """
+                    SELECT 
+                        s.address as store_address,
+                        COUNT(o.order_id) as visit_count
+                    FROM orders o
+                    INNER JOIN stores s ON o.store_id = s.store_id
+                    WHERE s.address IS NOT NULL 
+                      AND s.address != ''
+                    GROUP BY s.address
+                    HAVING visit_count > 0
+                    ORDER BY visit_count DESC
+                    LIMIT 20
+                """,
+                # Case 2: stores.id
+                """
+                    SELECT 
+                        s.address as store_address,
+                        COUNT(o.order_id) as visit_count
+                    FROM orders o
+                    INNER JOIN stores s ON o.store_id = s.id
+                    WHERE s.address IS NOT NULL 
+                      AND s.address != ''
+                    GROUP BY s.address
+                    HAVING visit_count > 0
+                    ORDER BY visit_count DESC
+                    LIMIT 20
+                """
+            ]
+            
+            df = None
+            for i, query in enumerate(queries, 1):
+                try:
+                    df = pd.read_sql(query, engine)
+                    print(f"인기 가게 쿼리 패턴 {i} 성공!")
+                    break
+                except Exception as e:
+                    print(f"인기 가게 쿼리 패턴 {i} 실패: {str(e)[:100]}")
+                    continue
+            
+            if df is None or df.empty:
+                print("인기 가게가 없습니다.")
+                return []
+            
+            result = df.to_dict('records')
+            # visit_count를 int로 변환
+            for record in result:
+                record['visit_count'] = int(record['visit_count'])
+            
+            print(f"DB에서 인기 가게 {len(result)}개 조회 완료")
+            return result
+            
+        except Exception as e:
+            print(f"인기 가게 조회 실패: {e}")
+            return []
+    
+    def _fetch_user_visit_data_from_db(self, user_id: str) -> List[Dict]:
+        """
+        DB에서 특정 사용자의 방문 데이터 조회
+        Args:
+            user_id: 사용자 ID
+        Returns:
+            [{"user_id": "2", "store_address": "주소", "visit_count": 5}, ...]
+        """
+        engine = self._get_db_engine()
+        if engine is None:
+            print("DB 연결 실패로 사용자 방문 데이터를 조회할 수 없습니다.")
+            return []
+        
+        try:
+            queries = [
+                # Case 1: stores.store_id
+                f"""
+                    SELECT 
+                        o.user_id,
+                        s.address as store_address,
+                        COUNT(o.order_id) as visit_count
+                    FROM orders o
+                    INNER JOIN stores s ON o.store_id = s.store_id
+                    WHERE o.user_id = {user_id}
+                      AND s.address IS NOT NULL 
+                      AND s.address != ''
+                    GROUP BY o.user_id, s.address
+                    HAVING visit_count > 0
+                    ORDER BY visit_count DESC
+                """,
+                # Case 2: stores.id
+                f"""
+                    SELECT 
+                        o.user_id,
+                        s.address as store_address,
+                        COUNT(o.order_id) as visit_count
+                    FROM orders o
+                    INNER JOIN stores s ON o.store_id = s.id
+                    WHERE o.user_id = {user_id}
+                      AND s.address IS NOT NULL 
+                      AND s.address != ''
+                    GROUP BY o.user_id, s.address
+                    HAVING visit_count > 0
+                    ORDER BY visit_count DESC
+                """
+            ]
+            
+            df = None
+            for i, query in enumerate(queries, 1):
+                try:
+                    df = pd.read_sql(query, engine)
+                    print(f"사용자 방문 데이터 쿼리 패턴 {i} 성공!")
+                    break
+                except Exception as e:
+                    print(f"사용자 방문 데이터 쿼리 패턴 {i} 실패: {str(e)[:100]}")
+                    continue
+            
+            if df is None or df.empty:
+                print(f"사용자 {user_id}의 방문 데이터가 없습니다.")
+                return []
+            
+            result = df.to_dict('records')
+            # user_id와 visit_count를 적절한 타입으로 변환
+            for record in result:
+                record['user_id'] = str(record['user_id'])
+                record['visit_count'] = int(record['visit_count'])
+            
+            print(f"DB에서 사용자 {user_id}의 방문 데이터 {len(result)}개 조회 완료")
+            return result
+            
+        except Exception as e:
+            print(f"사용자 방문 데이터 조회 실패: {e}")
+            return []
+    
     def _get_db_engine(self):
         """SQLAlchemy 엔진 생성 (lazy loading)"""
         if self.db_engine is None:
@@ -378,39 +601,41 @@ class RecommendationService:
             recommendation_reason=reasons
         )
     
-    def recommend_event_stores(self, request: RecommendationRequest) -> List[SimpleStoreInfo]:
+    def recommend_event_stores(self, user_lat: float, user_lon: float, event_stores_data: List[Dict]) -> List[SimpleStoreInfo]:
         """
         1. 이벤트 참여 가게 추천 (경험치 2배 부여 등)
         - 경험치 배수가 높은 순
         - 거리가 가까운 순
         - 최대 2개
-        """
-        user_lat = request.location.latitude
-        user_lon = request.location.longitude
         
+        Args:
+            user_lat: 사용자 위도
+            user_lon: 사용자 경도
+            event_stores_data: DB에서 조회한 이벤트 가게 데이터
+        """
         candidates = []
         
-        for event_store in request.event_stores:
-            # 가게 조회 (store_address 우선, 없으면 store_id)
-            print(f"이벤트 가게 찾기: address={event_store.store_address}")
-            store = self._get_store(
-                store_id=event_store.store_id,
-                store_address=event_store.store_address
-            )
+        for event_data in event_stores_data:
+            # 가게 조회 (주소로 찾기)
+            store_address = event_data.get("store_address")
+            exp_multiplier = event_data.get("exp_multiplier", 1.0)
+            
+            print(f"이벤트 가게 찾기: address={store_address}")
+            store = self._get_store_by_address(store_address)
             if not store:
-                print(f"가게를 찾을 수 없음: store_address={event_store.store_address}")
+                print(f"가게를 찾을 수 없음: store_address={store_address}")
                 continue
             print(f"가게 찾음: {store['name']} at {store['address']}")
             
             distance = self._calculate_distance(user_lat, user_lon, store)
-            print(f"   거리: {distance:.2f}km (사용자: {user_lat}, {user_lon} → 가게: {store['latitude']}, {store['longitude']})")
+            print(f"   거리: {distance:.2f}km")
             
             # 점수 = 경험치 배수 * 30 - 거리 * 2 (거리 패널티)
-            score = event_store.exp_multiplier * 30 - distance * 2
-            print(f"   점수: {score:.2f} (경험치 배수: {event_store.exp_multiplier})")
+            score = exp_multiplier * 30 - distance * 2
+            print(f"   점수: {score:.2f} (경험치 배수: {exp_multiplier})")
             
             reasons = [
-                f"경험치 {event_store.exp_multiplier}배 이벤트",
+                f"경험치 {exp_multiplier}배 이벤트",
                 f"거리 {distance:.1f}km"
             ]
             
@@ -431,31 +656,33 @@ class RecommendationService:
         simple_result = [SimpleStoreInfo(name=store.name, address=store.address) for store in result]
         return simple_result
     
-    def recommend_new_stores(self, request: RecommendationRequest) -> List[SimpleStoreInfo]:
+    def recommend_new_stores(self, user_lat: float, user_lon: float, new_stores_data: List[Dict]) -> List[SimpleStoreInfo]:
         """
         2. 신규 가입 가게 추천
         - 최근 가입한 순
         - 거리가 가까운 순
         - 최대 2개
-        """
-        user_lat = request.location.latitude
-        user_lon = request.location.longitude
-        current_date = datetime.now()
         
+        Args:
+            user_lat: 사용자 위도
+            user_lon: 사용자 경도
+            new_stores_data: DB에서 조회한 신규 가게 데이터
+        """
+        current_date = datetime.now()
         candidates = []
         
-        print(f"\n 신규 가게 추천 시작: {len(request.new_stores)}개 후보")
+        print(f"\n 신규 가게 추천 시작: {len(new_stores_data)}개 후보")
         
-        for new_store in request.new_stores:
-            print(f"신규 가게 찾기: address={new_store.store_address}, store_id={new_store.store_id}")
+        for new_data in new_stores_data:
+            store_address = new_data.get("store_address")
+            joined_date = new_data.get("joined_date")
             
-            # 가게 조회 (store_address 우선, 없으면 store_id)
-            store = self._get_store(
-                store_id=new_store.store_id,
-                store_address=new_store.store_address
-            )
+            print(f"신규 가게 찾기: address={store_address}")
+            
+            # 가게 조회
+            store = self._get_store_by_address(store_address)
             if not store:
-                print(f"가게를 찾을 수 없음: store_address={new_store.store_address}, store_id={new_store.store_id}")
+                print(f"가게를 찾을 수 없음: store_address={store_address}")
                 continue
             
             print(f"가게 찾음: {store['name']} at {store['address']}")
@@ -463,7 +690,9 @@ class RecommendationService:
             distance = self._calculate_distance(user_lat, user_lon, store)
             
             # 가입한 지 며칠 됐는지
-            days_since_joined = (current_date - new_store.joined_date).days
+            if isinstance(joined_date, str):
+                joined_date = datetime.fromisoformat(joined_date.replace('T', ' '))
+            days_since_joined = (current_date - joined_date).days
             
             # 점수 = (30 - 가입일수) * 2 - 거리 * 2
             # 최근 가입일수록 높은 점수
@@ -494,30 +723,32 @@ class RecommendationService:
         simple_result = [SimpleStoreInfo(name=store.name, address=store.address) for store in result]
         return simple_result
     
-    def recommend_popular_stores(self, request: RecommendationRequest) -> List[SimpleStoreInfo]:
+    def recommend_popular_stores(self, user_lat: float, user_lon: float, popular_stores_data: List[Dict]) -> List[SimpleStoreInfo]:
         """
         3. 인기 가게 추천 (유저들이 많이 방문한 가게)
         - 방문 횟수가 많은 순
         - 거리가 가까운 순
         - 최대 2개
-        """
-        user_lat = request.location.latitude
-        user_lon = request.location.longitude
         
+        Args:
+            user_lat: 사용자 위도
+            user_lon: 사용자 경도
+            popular_stores_data: DB에서 조회한 인기 가게 데이터
+        """
         candidates = []
         
-        print(f"\n 인기 가게 추천 시작: {len(request.popular_stores)}개 후보")
+        print(f"\n 인기 가게 추천 시작: {len(popular_stores_data)}개 후보")
         
-        for popular_store in request.popular_stores:
-            print(f"인기 가게 찾기: address={popular_store.store_address}, store_id={popular_store.store_id}")
+        for popular_data in popular_stores_data:
+            store_address = popular_data.get("store_address")
+            visit_count = popular_data.get("visit_count", 0)
             
-            # 가게 조회 (store_address 우선, 없으면 store_id)
-            store = self._get_store(
-                store_id=popular_store.store_id,
-                store_address=popular_store.store_address
-            )
+            print(f"인기 가게 찾기: address={store_address}")
+            
+            # 가게 조회
+            store = self._get_store_by_address(store_address)
             if not store:
-                print(f"가게를 찾을 수 없음: store_address={popular_store.store_address}, store_id={popular_store.store_id}")
+                print(f"가게를 찾을 수 없음: store_address={store_address}")
                 continue
             
             print(f"가게 찾음: {store['name']} at {store['address']}")
@@ -525,13 +756,13 @@ class RecommendationService:
             distance = self._calculate_distance(user_lat, user_lon, store)
             
             # 점수 = 방문횟수 / 10 - 거리 * 2
-            score = popular_store.visit_count / 10 - distance * 2
+            score = visit_count / 10 - distance * 2
             
-            print(f"   거리: {distance:.2f}km, 방문: {popular_store.visit_count}회")
+            print(f"   거리: {distance:.2f}km, 방문: {visit_count}회")
             print(f"   점수: {score:.2f}")
             
             reasons = [
-                f"방문 {popular_store.visit_count}회",
+                f"방문 {visit_count}회",
                 f"거리 {distance:.1f}km",
                 "인기 많은 가게"
             ]
@@ -553,29 +784,19 @@ class RecommendationService:
         simple_result = [SimpleStoreInfo(name=store.name, address=store.address) for store in result]
         return simple_result
     
-    def recommend_nearby_stores(self, request: RecommendationRequest) -> List[SimpleStoreInfo]:
+    def recommend_nearby_stores(self, user_lat: float, user_lon: float, recommended_addresses: set) -> List[SimpleStoreInfo]:
         """
         4. 가까운 가게 추천
         - 거리가 가까운 순
         - 평점이 높은 순
         - 최대 2개
+        
+        Args:
+            user_lat: 사용자 위도
+            user_lon: 사용자 경도
+            recommended_addresses: 이미 추천된 가게 주소들 (중복 제거용)
         """
         self._ensure_data_loaded()  # 데이터 로드 확인
-        
-        user_lat = request.location.latitude
-        user_lon = request.location.longitude
-        
-        # 이미 추천된 가게 주소들
-        recommended_addresses = set()
-        for event_store in request.event_stores:
-            if event_store.store_address:
-                recommended_addresses.add(event_store.store_address)
-        for new_store in request.new_stores:
-            if new_store.store_address:
-                recommended_addresses.add(new_store.store_address)
-        for popular_store in request.popular_stores:
-            if popular_store.store_address:
-                recommended_addresses.add(popular_store.store_address)
         
         candidates = []
         
@@ -612,40 +833,38 @@ class RecommendationService:
         simple_result = [SimpleStoreInfo(name=store.name, address=store.address) for store in result]
         return simple_result
     
-    def recommend_cf_stores(self, request: RecommendationRequest) -> List[SimpleStoreInfo]:
+    def recommend_cf_stores(self, user_id: str, user_lat: float, user_lon: float, user_visit_data: List[Dict]) -> List[SimpleStoreInfo]:
         """
         5. 협업 필터링 기반 추천 (AI 모델 사용)
         - 비슷한 취향의 사용자들이 방문한 가게 추천
         - KNN 알고리즘으로 유사 사용자 찾기
         - 최대 2개
+        
+        Args:
+            user_id: 사용자 ID
+            user_lat: 사용자 위도
+            user_lon: 사용자 경도
+            user_visit_data: DB에서 조회한 사용자 방문 데이터
         """
         self._ensure_data_loaded()  # 데이터 로드 확인
         
-        # Spring Boot에서 전달받은 방문 데이터로 모델 훈련
-        # request.visit_data는 visit_statics의 별칭(property)
-        visit_data = request.visit_data  # visit_statics를 가져옴
-        
-        if visit_data and len(visit_data) > 0:
-            # 방문 데이터를 dict 리스트로 변환
-            visit_data_list = [visit.model_dump() for visit in visit_data]
-            is_trained = self._train_cf_model(visit_data_list)
+        # DB에서 조회한 방문 데이터로 모델 훈련
+        if user_visit_data and len(user_visit_data) > 0:
+            is_trained = self._train_cf_model(user_visit_data)
             
             if not is_trained:
                 print("협업 필터링 모델 훈련 실패. AI 추천을 건너뜁니다.")
                 return []
         else:
-            print("방문 데이터가 제공되지 않았습니다. AI 추천을 건너뜁니다.")
+            print("방문 데이터가 없습니다. AI 추천을 건너뜁니다.")
             return []
-        
-        user_lat = request.location.latitude
-        user_lon = request.location.longitude
         
         #  AI 추천은 1순위이므로 중복 체크 없이 순수하게 추천!
         # 다른 카테고리들이 AI 추천을 피해가도록 수정됨
         
         # 협업 필터링으로 가게 추천
         cf_recommendations = self.cf_model.recommend_stores(
-            user_id=request.user_id,
+            user_id=user_id,
             n_recommendations=10,
             exclude_visited=True
         )
@@ -713,14 +932,41 @@ class RecommendationService:
         """
         print("\n" + "="*60)
         print("전체 추천 프로세스 시작")
+        print(f"사용자 ID: {request.user_id}, 위치: ({request.location.latitude}, {request.location.longitude})")
         print("="*60)
         
+        # DB에서 필요한 데이터 조회
+        print("\n[데이터 조회] DB에서 추천에 필요한 데이터를 조회합니다...")
+        
+        # 1. 이벤트 가게 조회
+        event_stores_data = self._fetch_event_stores_from_db()
+        
+        # 2. 신규 가게 조회
+        new_stores_data = self._fetch_new_stores_from_db()
+        
+        # 3. 인기 가게 조회
+        popular_stores_data = self._fetch_popular_stores_from_db()
+        
+        # 4. 사용자 방문 데이터 조회
+        user_visit_data = self._fetch_user_visit_data_from_db(request.user_id)
+        
+        print(f"조회 완료: 이벤트 {len(event_stores_data)}개, 신규 {len(new_stores_data)}개, "
+              f"인기 {len(popular_stores_data)}개, 방문 기록 {len(user_visit_data)}개")
+        
         recommendations = []
+        
+        user_lat = request.location.latitude
+        user_lon = request.location.longitude
         
         # 1. AI 추천 가게 (협업 필터링)  우선순위 1순위!
         try:
             print("\n[1/5] AI 추천 가게 (협업 필터링) 중...")
-            cf_stores = self.recommend_cf_stores(request)
+            cf_stores = self.recommend_cf_stores(
+                user_id=request.user_id,
+                user_lat=user_lat,
+                user_lon=user_lon,
+                user_visit_data=user_visit_data
+            )
             print(f"AI 추천 가게 {len(cf_stores)}개 추천 완료")
         except Exception as e:
             print(f"AI 추천 가게 추천 실패: {str(e)}")
@@ -737,7 +983,11 @@ class RecommendationService:
         # 2. 이벤트 참여 가게
         try:
             print("\n[2/5] 이벤트 참여 가게 추천 중...")
-            event_stores_raw = self.recommend_event_stores(request)
+            event_stores_raw = self.recommend_event_stores(
+                user_lat=user_lat,
+                user_lon=user_lon,
+                event_stores_data=event_stores_data
+            )
             # AI 추천과 중복 제거
             event_stores = [s for s in event_stores_raw if s.address not in ai_recommended_addresses]
             if len(event_stores_raw) > len(event_stores):
@@ -754,7 +1004,11 @@ class RecommendationService:
         # 3. 신규 가입 가게
         try:
             print("\n[3/5] 신규 가입 가게 추천 중...")
-            new_stores_raw = self.recommend_new_stores(request)
+            new_stores_raw = self.recommend_new_stores(
+                user_lat=user_lat,
+                user_lon=user_lon,
+                new_stores_data=new_stores_data
+            )
             # AI 추천과 중복 제거
             new_stores = [s for s in new_stores_raw if s.address not in ai_recommended_addresses]
             if len(new_stores_raw) > len(new_stores):
@@ -771,7 +1025,11 @@ class RecommendationService:
         # 4. 인기 가게
         try:
             print("\n[4/5] 인기 가게 추천 중...")
-            popular_stores_raw = self.recommend_popular_stores(request)
+            popular_stores_raw = self.recommend_popular_stores(
+                user_lat=user_lat,
+                user_lon=user_lon,
+                popular_stores_data=popular_stores_data
+            )
             # AI 추천과 중복 제거
             popular_stores = [s for s in popular_stores_raw if s.address not in ai_recommended_addresses]
             if len(popular_stores_raw) > len(popular_stores):
@@ -785,10 +1043,23 @@ class RecommendationService:
             stores=popular_stores
         ))
         
+        # 이미 추천된 가게 주소들 모으기 (가까운 가게에서 제외하기 위해)
+        all_recommended_addresses = ai_recommended_addresses.copy()
+        for store in event_stores:
+            all_recommended_addresses.add(store.address)
+        for store in new_stores:
+            all_recommended_addresses.add(store.address)
+        for store in popular_stores:
+            all_recommended_addresses.add(store.address)
+        
         # 5. 가까운 가게
         try:
             print("\n[5/5] 가까운 가게 추천 중...")
-            nearby_stores_raw = self.recommend_nearby_stores(request)
+            nearby_stores_raw = self.recommend_nearby_stores(
+                user_lat=user_lat,
+                user_lon=user_lon,
+                recommended_addresses=all_recommended_addresses
+            )
             # AI 추천과 중복 제거
             nearby_stores = [s for s in nearby_stores_raw if s.address not in ai_recommended_addresses]
             if len(nearby_stores_raw) > len(nearby_stores):
