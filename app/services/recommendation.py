@@ -470,14 +470,23 @@ class RecommendationService:
         try:
             # ai_data 폴더에서 파일 찾기
             current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            excel_path = os.path.join(current_dir, "..", "ai_data", "마포구_전체_가게_위경도.xlsx")
             
-            # 파일이 없으면 기본 파일 사용
-            if not os.path.exists(excel_path):
-                excel_path = os.path.join(current_dir, "..", "ai_data", "마포구_전체_가게.xlsx")
+            # --- [수정된 로직 시작: CSV 파일 로드 최우선] ---
+            # 1. 고객님이 제공한 CSV 파일 경로 확인 및 로드 (가장 유효한 데이터)
+            csv_path = os.path.join(current_dir, "..", "ai_data", "마포구_전체_가게_위경도.xlsx - Sheet1.csv")
             
-            df = pd.read_excel(excel_path)
-            
+            if os.path.exists(csv_path):
+                print(f"CSV 파일 로드 시도: {csv_path}")
+                # CSV 파일이므로 pd.read_csv를 사용
+                df = pd.read_csv(csv_path) 
+            else:
+                # 2. CSV 파일이 없으면 기존 로직 유지 (xlsx 파일 로드 시도)
+                excel_path = os.path.join(current_dir, "..", "ai_data", "마포구_전체_가게_위경도.xlsx")
+                if not os.path.exists(excel_path):
+                    excel_path = os.path.join(current_dir, "..", "ai_data", "마포구_전체_가게.xlsx")
+                
+                print(f"XLSX 파일 로드 시도: {excel_path}")
+                df = pd.read_excel(excel_path)
             # 필요한 컬럼만 선택 및 이름 변경
             # 업소명 → name, 도로명(수정) → address, 업태명 → category
             df = df.rename(columns={
