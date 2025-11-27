@@ -90,17 +90,28 @@ class VisitData(BaseModel):
 
 class RecommendationRequest(BaseModel):
     """
-    가게 추천 요청 모델 (간소화 버전)
-    user_id와 location만 받고, 나머지는 DB에서 직접 조회
+    가게 추천 요청 모델 (하위 호환성 유지)
+    Spring Boot가 보내는 데이터를 우선 사용하고, 없으면 DB에서 조회
     """
     user_id: Union[str, int] = Field(..., description="사용자 ID")
     location: UserLocation = Field(..., description="사용자 위치")
+    
+    # 선택적 필드 (Spring Boot가 보낼 수도 있음)
+    event_stores: List[EventStore] = Field(default_factory=list, description="이벤트 참여 가게 목록")
+    new_stores: List[NewStore] = Field(default_factory=list, description="신규 가입 가게 목록")
+    popular_stores: List[PopularStore] = Field(default_factory=list, description="인기 가게 목록")
+    visit_statics: List[VisitData] = Field(default_factory=list, description="방문 통계 데이터")
     
     @field_validator('user_id')
     @classmethod
     def convert_user_id_to_str(cls, v):
         """user_id를 문자열로 변환"""
         return str(v)
+    
+    @property
+    def visit_data(self) -> List[VisitData]:
+        """visit_statics를 visit_data로 접근할 수 있도록 별칭 제공"""
+        return self.visit_statics
     
     class Config:
         json_schema_extra = {
@@ -109,7 +120,11 @@ class RecommendationRequest(BaseModel):
                 "location": {
                     "latitude": 37.556,
                     "longitude": 126.925
-                }
+                },
+                "event_stores": [],
+                "new_stores": [],
+                "popular_stores": [],
+                "visit_statics": []
             }
         }
 

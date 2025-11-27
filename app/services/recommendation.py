@@ -386,16 +386,11 @@ class RecommendationService:
             else:
                 print("Spring Boot에서 현재 사용자 방문 데이터가 비어있습니다.")
             
-            # MySQL에서 모든 사용자의 방문 데이터 가져오기
-            print(f"MySQL에서 모든 사용자의 방문 데이터를 가져옵니다...")
+            # MySQL에서 모든 사용자의 방문 데이터 가져오기 (선택적)
+            print(f"MySQL에서 추가 사용자의 방문 데이터를 가져옵니다...")
             db_visit_data = self._fetch_visit_data_from_db()
             
-            if not db_visit_data:
-                print("MySQL에서 데이터를 가져올 수 없습니다. 협업 필터링 불가능.")
-                return False
-            
-            # MySQL 데이터와 Spring Boot 데이터 병합
-            # Spring Boot 데이터를 우선 사용 (최신 방문 기록)
+            # Spring Boot 데이터와 MySQL 데이터 병합
             all_visit_data = []
             existing_keys = set()
             
@@ -406,19 +401,27 @@ class RecommendationService:
                 all_visit_data.append(visit)
             
             # 2. MySQL의 다른 사용자 데이터 추가 (중복 제거)
-            for db_record in db_visit_data:
-                key = (str(db_record["user_id"]), db_record["store_address"])
-                if key not in existing_keys:
-                    all_visit_data.append(db_record)
-                    existing_keys.add(key)
+            if db_visit_data:
+                for db_record in db_visit_data:
+                    key = (str(db_record["user_id"]), db_record["store_address"])
+                    if key not in existing_keys:
+                        all_visit_data.append(db_record)
+                        existing_keys.add(key)
+                print(f"MySQL에서 {len(db_visit_data)}개 추가 레코드 병합")
+            else:
+                print("MySQL 데이터가 없습니다. Spring Boot 데이터만 사용합니다.")
             
             # 사용자 수 확인
             unique_users = set(v.get("user_id") for v in all_visit_data if v.get("user_id"))
             print(f"전체 데이터: {len(unique_users)}명 사용자, {len(all_visit_data)}개 레코드")
             
             if len(unique_users) < 2:
-                print(f"사용자가 {len(unique_users)}명뿐입니다. 협업 필터링 불가능.")
-                return False
+                print(f"사용자가 {len(unique_users)}명뿐입니다. 인기 기반 추천으로 대체합니다.")
+                # 사용자가 적어도 방문 데이터가 있으면 모델 훈련 시도
+                if len(all_visit_data) > 0:
+                    pass  # 계속 진행 (인기 기반 추천 사용)
+                else:
+                    return False
             
             # all_visit_data를 사용하여 모델 훈련
             visit_data = all_visit_data
@@ -470,24 +473,15 @@ class RecommendationService:
         try:
             # ai_data 폴더에서 파일 찾기
             current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            project_root = os.path.join(current_dir, "..")
             
-            # --- [수정된 로직 시작: CSV 파일 로드 최우선] ---
-            # 1. 고객님이 제공한 CSV 파일 경로 확인 및 로드 (가장 유효한 데이터)
-            # 1. CSV 파일 경로 확인 및 로드
-            csv_path = os.path.join(project_root, "ai_data", "마포구_전체_가게_위경도.xlsx - Sheet1.csv")
+            # XLSX 파일 로드
+            excel_path = os.path.join(project_root, "ai_data", "마포구_전체_가게_위경도.xlsx")
+            if not os.path.exists(excel_path):
+                excel_path = os.path.join(project_root, "ai_data", "마포구_전체_가게.xlsx")
             
-            if os.path.exists(csv_path):
-                print(f"CSV 파일 로드 시도: {csv_path}")
-                df = pd.read_csv(csv_path)
-            else:
-                # 2. CSV 파일이 없으면 기존 로직 유지 (xlsx 파일 로드 시도)
-                excel_path = os.path.join(project_root, "ai_data", "마포구_전체_가게_위경도.xlsx")
-                if not os.path.exists(excel_path):
-                    excel_path = os.path.join(project_root, "ai_data", "마포구_전체_가게.xlsx")
-                
-                print(f"XLSX 파일 로드 시도: {excel_path}")
-                # 파일 로드 실패 시 예외가 발생하여 try-except로 이동합니다.
-                df = pd.read_excel(excel_path)
+            print(f"XLSX 파일 로드 시도: {excel_path}")
+            df = pd.read_excel(excel_path)
             # 필요한 컬럼만 선택 및 이름 변경
             # 업소명 → name, 도로명(수정) → address, 업태명 → category
             df = df.rename(columns={
@@ -945,22 +939,47 @@ class RecommendationService:
         print(f"사용자 ID: {request.user_id}, 위치: ({request.location.latitude}, {request.location.longitude})")
         print("="*60)
         
-        # DB에서 필요한 데이터 조회
-        print("\n[데이터 조회] DB에서 추천에 필요한 데이터를 조회합니다...")
+        # Spring Boot가 보낸 데이터 우선 사용
+        print("\n[데이터 조회] Spring Boot에서 전달받은 데이터를 확인합니다...")
         
-        # 1. 이벤트 가게 조회
-        event_stores_data = self._fetch_event_stores_from_db()
+        # 1. 이벤트 가게 - Spring Boot 데이터를 dict 형식으로 변환
+        event_stores_data = []
+        if request.event_stores:
+            for store in request.event_stores:
+                event_stores_data.append({
+                    "store_address": store.store_address,
+                    "exp_multiplier": store.exp_multiplier
+                })
         
-        # 2. 신규 가게 조회
-        new_stores_data = self._fetch_new_stores_from_db()
+        # 2. 신규 가게 - Spring Boot 데이터를 dict 형식으로 변환
+        new_stores_data = []
+        if request.new_stores:
+            for store in request.new_stores:
+                new_stores_data.append({
+                    "store_address": store.store_address,
+                    "joined_date": store.joined_date
+                })
         
-        # 3. 인기 가게 조회
-        popular_stores_data = self._fetch_popular_stores_from_db()
+        # 3. 인기 가게 - Spring Boot 데이터를 dict 형식으로 변환
+        popular_stores_data = []
+        if request.popular_stores:
+            for store in request.popular_stores:
+                popular_stores_data.append({
+                    "store_address": store.store_address,
+                    "visit_count": store.visit_count
+                })
         
-        # 4. 사용자 방문 데이터 조회
-        user_visit_data = self._fetch_user_visit_data_from_db(request.user_id)
+        # 4. 사용자 방문 데이터 - Spring Boot 데이터를 dict 형식으로 변환
+        user_visit_data = []
+        if request.visit_statics:
+            for visit in request.visit_statics:
+                user_visit_data.append({
+                    "user_id": visit.user_id,
+                    "store_address": visit.store_address,
+                    "visit_count": visit.visit_count
+                })
         
-        print(f"조회 완료: 이벤트 {len(event_stores_data)}개, 신규 {len(new_stores_data)}개, "
+        print(f"Spring Boot 데이터: 이벤트 {len(event_stores_data)}개, 신규 {len(new_stores_data)}개, "
               f"인기 {len(popular_stores_data)}개, 방문 기록 {len(user_visit_data)}개")
         
         recommendations = []
