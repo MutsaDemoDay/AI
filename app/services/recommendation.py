@@ -355,6 +355,16 @@ class RecommendationService:
             try:
                 self.stores_df = self._load_stores_from_excel()
                 print(f"가게 데이터 로드 완료: {len(self.stores_df)}개 가게")
+                
+                # 성능 향상: 주소 인덱스 생성 (O(1) 검색)
+                if not hasattr(self, '_address_index'):
+                    self._address_index = {}
+                    for idx, row in self.stores_df.iterrows():
+                        address = str(row['address']).strip()
+                        if address not in self._address_index:
+                            self._address_index[address] = row.to_dict()
+                    print(f"주소 인덱스 생성: {len(self._address_index)}개 주소")
+                    
             except Exception as e:
                 print(f"데이터 로드 실패: {e}")
                 # 최소한의 Mock 데이터
@@ -368,6 +378,7 @@ class RecommendationService:
                     "rating": 4.5,
                     "review_count": 100
                 }])
+                self._address_index = {}
             finally:
                 self._is_loading = False
     
@@ -386,30 +397,13 @@ class RecommendationService:
             else:
                 print("Spring Boot에서 현재 사용자 방문 데이터가 비어있습니다.")
             
-            # MySQL에서 모든 사용자의 방문 데이터 가져오기 (선택적)
-            print(f"MySQL에서 추가 사용자의 방문 데이터를 가져옵니다...")
-            db_visit_data = self._fetch_visit_data_from_db()
-            
-            # Spring Boot 데이터와 MySQL 데이터 병합
+            # Spring Boot 데이터만 사용 (MySQL 조회 생략하여 속도 향상)
+            print(f"Spring Boot 데이터만 사용합니다 (빠른 응답을 위해 MySQL 조회 생략)")
             all_visit_data = []
-            existing_keys = set()
             
-            # 1. Spring Boot의 현재 사용자 데이터 추가
+            # Spring Boot의 현재 사용자 데이터 사용
             for visit in visit_data:
-                key = (visit.get("user_id"), visit.get("store_address"))
-                existing_keys.add(key)
                 all_visit_data.append(visit)
-            
-            # 2. MySQL의 다른 사용자 데이터 추가 (중복 제거)
-            if db_visit_data:
-                for db_record in db_visit_data:
-                    key = (str(db_record["user_id"]), db_record["store_address"])
-                    if key not in existing_keys:
-                        all_visit_data.append(db_record)
-                        existing_keys.add(key)
-                print(f"MySQL에서 {len(db_visit_data)}개 추가 레코드 병합")
-            else:
-                print("MySQL 데이터가 없습니다. Spring Boot 데이터만 사용합니다.")
             
             # 사용자 수 확인
             unique_users = set(v.get("user_id") for v in all_visit_data if v.get("user_id"))
@@ -536,35 +530,23 @@ class RecommendationService:
         return store_row.iloc[0].to_dict()
     
     def _get_store_by_address(self, store_address: str) -> Dict:
-        """주소로 가게 정보 조회"""
+        """주소로 가게 정보 조회 (인덱스 사용으로 O(1) 성능)"""
         self._ensure_data_loaded()  # 데이터 로드 확인
         
-        # 엑셀의 주소 샘플 출력 (처음 5개)
-        if len(self.stores_df) > 0 and not hasattr(self, '_address_sample_printed'):
-            print(f"📋 엑셀 주소 샘플 (처음 5개):")
-            for idx in range(min(5, len(self.stores_df))):
-                print(f"  - {self.stores_df.iloc[idx]['address']}")
-            self._address_sample_printed = True
+        # 1. 인덱스에서 정확한 주소 검색 (O(1))
+        address_key = str(store_address).strip()
+        if hasattr(self, '_address_index') and address_key in self._address_index:
+            return self._address_index[address_key]
         
-        print(f"찾는 주소: {store_address}")
-        
-        # 정확히 일치하는 가게 찾기
+        # 2. 인덱스 없으면 기존 방식 (fallback)
         store_row = self.stores_df[self.stores_df['address'] == store_address]
         
-        # 못 찾으면 앞뒤 공백 제거 후 다시 찾기
         if len(store_row) == 0:
             store_row = self.stores_df[self.stores_df['address'].str.strip() == store_address.strip()]
         
-        # 그래도 못 찾으면 포함 검색 (부분 일치)
         if len(store_row) == 0:
-            store_row = self.stores_df[self.stores_df['address'].str.contains(store_address.strip(), na=False, regex=False)]
-            if len(store_row) > 0:
-                # 여러 개 찾았으면 첫 번째 것 사용
-                print(f"주소 부분 일치로 가게 찾음: {store_address} → {store_row.iloc[0]['address']}")
-        
-        if len(store_row) == 0:
-            print(f"주소로 가게를 찾을 수 없음: {store_address}")
             return None
+            
         return store_row.iloc[0].to_dict()
     
     def _get_store(self, store_id: str = None, store_address: str = None) -> Dict:
