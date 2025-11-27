@@ -473,19 +473,20 @@ class RecommendationService:
             
             # --- [수정된 로직 시작: CSV 파일 로드 최우선] ---
             # 1. 고객님이 제공한 CSV 파일 경로 확인 및 로드 (가장 유효한 데이터)
-            csv_path = os.path.join(current_dir, "..", "ai_data", "마포구_전체_가게_위경도.xlsx - Sheet1.csv")
+            # 1. CSV 파일 경로 확인 및 로드
+            csv_path = os.path.join(project_root, "ai_data", "마포구_전체_가게_위경도.xlsx - Sheet1.csv")
             
             if os.path.exists(csv_path):
                 print(f"CSV 파일 로드 시도: {csv_path}")
-                # CSV 파일이므로 pd.read_csv를 사용
-                df = pd.read_csv(csv_path) 
+                df = pd.read_csv(csv_path)
             else:
                 # 2. CSV 파일이 없으면 기존 로직 유지 (xlsx 파일 로드 시도)
-                excel_path = os.path.join(current_dir, "..", "ai_data", "마포구_전체_가게_위경도.xlsx")
+                excel_path = os.path.join(project_root, "ai_data", "마포구_전체_가게_위경도.xlsx")
                 if not os.path.exists(excel_path):
-                    excel_path = os.path.join(current_dir, "..", "ai_data", "마포구_전체_가게.xlsx")
+                    excel_path = os.path.join(project_root, "ai_data", "마포구_전체_가게.xlsx")
                 
                 print(f"XLSX 파일 로드 시도: {excel_path}")
+                # 파일 로드 실패 시 예외가 발생하여 try-except로 이동합니다.
                 df = pd.read_excel(excel_path)
             # 필요한 컬럼만 선택 및 이름 변경
             # 업소명 → name, 도로명(수정) → address, 업태명 → category
